@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quiz Page</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="hi">
+      <h1>Test Your Knowledge: Dive into the Challenge!</h1>
+      <form id="quiz-form">
+        <label for="num-questions">Number of questions:</label>
+        <input type="number" id="num-questions" value="5" min="1" />
+        <br />
+        <label for="quiz-level">Quiz level:</label>
+        <select id="quiz-level">
+          <option value="all">Select level of Quiz</option>
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+        <br />
+        <label for="question-type">Question type:</label>
+        <select id="question-type">
+          <option value="all">Select type of question</option>
+          <option value="multiple-choice">Multiple-choice</option>
+          <option value="true-false">True-False</option>
+        </select>
+        <br />
+        <label for="username">Your username for leaderboard (optional):</label>
+        <input type="text" id="username" placeholder="Your name" />
+        <br />
+        <div class="button-container">
+          <button type="submit">Start Quiz</button>
+        </div>
+      </form>
+
+      <div id="quiz-container" style="display: none">
+        <div id="questions"></div>
+        <div class="button-container">
+          <button id="submit-quiz" style="display: none">Submit Quiz</button>
+        </div>
+        <div id="score" style="display: none"></div>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        const quizForm = document.getElementById("quiz-form");
+        const submitQuizButton = document.getElementById("submit-quiz");
+        const quizContainer = document.getElementById("quiz-container");
+        const scoreContainer = document.getElementById("score");
+        let questions = [];
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const category = urlParams.get("category");
+
+        quizForm.addEventListener("submit", async function (event) {
+          event.preventDefault();
+
+          const numQuestions = document.getElementById("num-questions").value;
+          const quizLevel = document.getElementById("quiz-level").value;
+          const questionType = document.getElementById("question-type").value;
+
+          if (quizLevel === "all" || questionType === "all") {
+            alert("Please select a valid quiz level and question type.");
+            return;
+          }
+
+          console.log("Requesting questions with params:", {
+            numQuestions,
+            quizLevel,
+            questionType,
+            category,
+          });
+
+          try {
+            const response = await fetch(
+              `http://localhost:3000/get-questions?num=${numQuestions}&level=${quizLevel}&type=${questionType}&category=${category}`
+            );
+            const questionsData = await response.json();
+
+            if (response.ok) {
+              questions = questionsData;
+              if (questions.length > 0) {
+                displayQuiz(questions);
+              } else {
+                alert("No questions found based on your criteria.");
+              }
+            } else {
+              alert("Error fetching questions: " + questionsData.message);
+            }
+          } catch (error) {
+            console.error("Failed to fetch questions:", error);
+            alert("Error fetching questions.");
+          }
+        });
+
+        submitQuizButton.addEventListener("click", function () {
+          calculateScore();
+        });
+
+        function displayQuiz(questions) {
+          quizForm.style.display = "none";
+          quizContainer.style.display = "block";
+          const questionsContainer = document.getElementById("questions");
+          questionsContainer.innerHTML = "";
+
+          questions.forEach((question, index) => {
+            const questionElement = document.createElement("div");
+            questionElement.innerHTML = `<p>${index + 1}. ${
+              question.questionText
+            }</p>`;
+
+            if (question.options) {
+              question.options.forEach((option) => {
+                questionElement.innerHTML += ` 
+                                <label>
+                                    <input type="radio" name="question-${index}" value="${option}">
+                                    ${option}
+                                </label><br>`;
+              });
+            } else {
+              questionElement.innerHTML += ` 
+                            <label>
+                                <input type="radio" name="question-${index}" value="true"> True
+                            </label><br>
+                            <label>
+                                <input type="radio" name="question-${index}" value="false"> False
+                            </label><br>`;
+            }
+            questionsContainer.appendChild(questionElement);
+          });
+
+          submitQuizButton.style.display = "inline-block";
+        }
+
+        function calculateScore() {
+          let score = 0;
+          questions.forEach((question, index) => {
+            const selectedOption = document.querySelector(
+              `input[name="question-${index}"]:checked`
+            );
+            if (
+              selectedOption &&
+              selectedOption.value === question.correctAnswer
+            ) {
+              score++;
+            }
+          });
+
+          let username = document.getElementById("username").value;
+          if (!username) {
+            username = "Guest Player"; 
+          }
+
+          if (username !== "Guest Player") {
+            async function submitScore(username, score) {
+              try {
+                const response = await fetch(
+                  "http://localhost:4000/api/leaderboard",
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ username, score }),
+                  }
+                );
+
+                const data = await response.json();
+                console.log(data.message);
+              } catch (error) {
+                console.error("Error submitting score:", error);
+              }
+            }
+
+            submitScore(username, score);
+          }
+
+          const feedbackMessage = getFeedback(score, questions.length);
+
+          let feedbackStyle = "color: green;";
+          if (score === questions.length) {
+            feedbackStyle = "color: gold;";
+          } else if (score >= questions.length * 0.7) {
+            feedbackStyle = "color: blue;";
+          } else if (score >= questions.length * 0.5) {
+            feedbackStyle = "color: orange;";
+          } else {
+            feedbackStyle = "color: red;";
+          }
+
+          scoreContainer.innerHTML = `
+    <div class="score-content">
+      <h2>${username}, Your Score:</h2>
+      <p>You scored <span>${score}</span> out of ${questions.length}!</p>
+      <p class="score-feedback" style="${feedbackStyle}">${feedbackMessage}</p>
+    </div>
+  `;
+          scoreContainer.style.display = "block";
+          submitQuizButton.style.display = "none";
+        }
+
+        function getFeedback(score, total) {
+          const percentage = (score / total) * 100;
+          if (percentage === 100) return "Perfect! 🥇 You're a quiz master!";
+          if (percentage >= 70) return "Great job! 🏆 Keep up the good work!";
+          if (percentage >= 50)
+            return "Good effort! 👍 Try for a higher score next time!";
+          return "Keep practicing! 💪 You'll get there!";
+        }
+      });
+    </script>
+  </body>
+</html>
